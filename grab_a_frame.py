@@ -5,11 +5,13 @@ import re
 import sys
 
 nonzero_threshold = 1000
-pixel_brightness_threshold = 50
+pixel_brightness_threshold = 60
+reference_scene_offset = (0,0)
 working_dir = '/home/pi/cv/pics'
 stream_url = 'http://127.0.0.1:8086'
 stream_filename = os.path.join(working_dir, 'index.html')
 latest_frame_filename = os.path.join(working_dir, 'current_frame.jpg')
+latest_frame_homed_filename = os.path.join(working_dir, 'current_frame_homed.jpg')
 last10_filename = os.path.join(working_dir, 'last10_image.jpg')
 diff_filename = os.path.join(working_dir, 'difference.jpg')
 bwdiff_filename = os.path.join(working_dir, 'bw_difference.jpg')
@@ -90,14 +92,9 @@ def find_features():
     edged = cv2.Canny(blurred, 30, 150)
     cv2.imwrite(edged_filename, edged)
 
-    (_, cnts, _) = cv2.findContours(edged,
-                                    cv2.RETR_EXTERNAL,
-                                    cv2.CHAIN_APPROX_SIMPLE)
-
-    # list contours
-    for c in cnts:
-        (x,y,w,h) = cv2.boundingRect(c)
-        print 'one contour has x,y,w,h {0},{1},{2},{3}'.format(x,y,w,h)
+    (_, contours, _) = cv2.findContours(edged,
+                                        cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
 
     # draw the contours over the original color difference image
     diff = cv2.imread(diff_filename)
@@ -105,13 +102,34 @@ def find_features():
     cv2.drawContours(features, cnts, -1, (0,255,0), 2)
     cv2.imwrite(features_filename, features)
 
+    return contours
+
+def compare_contours_to_reference(contours):
+    # list contours
+    for c in contours:
+        (x,y,w,h) = cv2.boundingRect(c)
+        print 'one contour has x,y,w,h {0},{1},{2},{3}'.format(x,y,w,h)
+        home_scene_rect = (x+reference_scene_offset[0],
+                           y+reference_scene_offset[3],
+                           w,
+                           h)
+        if h > 2*w and h > 10:
+            print 'its a standing person'
+        if x > 40 and y > 30:
+            print 'its in the BR quadrant'
+        bottom_y = h + y
+        if bottom_y < 30:
+            print 'its in the far half of the room'
+
 
 try:
     get_last_10_images()
     save_stream_to_a_file()
     parse_image_from_stream()
+
     image_has_differences = image_differences()
     if image_has_differences:
-        find_features()
+        contours = find_features()
+    compare_contours_to_reference(contours)
 except Exception, e:
     print e
