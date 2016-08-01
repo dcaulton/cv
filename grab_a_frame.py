@@ -4,8 +4,10 @@ import os
 import re
 import sys
 
-nonzero_threshold = 1000
-pixel_brightness_threshold = 60
+nonzero_threshold_upper = 1000    # more than this, it's just spots of noise in the frame
+nonzero_threshold_lower = 12  # more than this, nothing is in the frame
+feature_threshold_lower = 7  # less than this, the feature is too small
+pixel_brightness_threshold = 50
 reference_scene_offset = (0,0)
 working_dir = '/home/pi/cv/pics'
 stream_url = 'http://127.0.0.1:8086'
@@ -26,7 +28,7 @@ def get_last_10_images():
     os.system(tc)
 
 def save_stream_to_a_file():
-    os.system('timeout 2 wget {0} -O {1}'.format(stream_url, stream_filename))
+    os.system('timeout 2 wget -q {0} -O {1}'.format(stream_url, stream_filename))
     print 'stream saved'
 
 def parse_image_from_stream():
@@ -40,7 +42,13 @@ def parse_image_from_stream():
         line = ifh.readline() # Content-Length:        1985\r\n
         line = ifh.readline() #   (empty line)
 
+        max_loops = 10000
+        count = 0
         while True:
+            count += 1
+            if count > max_loops:
+                print 'max loops parsing image from stream'
+                break
             line = ifh.readline() 
             if boundary_re.match(line):
                 print 'found ending boundary'
@@ -75,51 +83,62 @@ def image_differences():
     #  (empty room is mostly yellow, when there is a person in the room, they
     #   become the hot and everything else becomes less yellow=less green channel)
     nonzero_pixel_count = cv2.countNonZero(bwdiffthresh)
-    print 'nonzero pixel count: '+str(nonzero_pixel_count)
-    if nonzero_pixel_count < nonzero_threshold:
-        print 'there is someone in the picture'
+    if (nonzero_pixel_count < nonzero_threshold_upper
+        and nonzero_pixel_count > nonzero_threshold_lower):
+        msg = 'looks like something changed and it is occupying the frame: {0} pixels changed'.format(nonzero_pixel_count)
+        print msg
         return True
     else:
-        print 'no one is in the picture'
+        msg = 'frame looks like the rolling average: {0} pixels changed'.format(nonzero_pixel_count)
+        print msg
         return False
 
 def find_features():
     # blur out noise
     diff_thresh = cv2.imread(bwdiffthresh_filename)
-    blurred = cv2.medianBlur(diff_thresh, 5)
+    blurred = cv2.medianBlur(diff_thresh, 3)
     cv2.imwrite(blurred_filename, blurred)
     # use canny edge detection to draw rings around the bounded objects
     edged = cv2.Canny(blurred, 30, 150)
     cv2.imwrite(edged_filename, edged)
 
-    (_, contours, _) = cv2.findContours(edged,
-                                        cv2.RETR_EXTERNAL,
-                                        cv2.CHAIN_APPROX_SIMPLE)
+    (_, cons, _) = cv2.findContours(edged,
+                                    cv2.RETR_EXTERNAL,
+                                    cv2.CHAIN_APPROX_SIMPLE)
 
     # draw the contours over the original color difference image
     diff = cv2.imread(diff_filename)
     features = diff.copy()
-    cv2.drawContours(features, cnts, -1, (0,255,0), 2)
+    cv2.drawContours(features, cons, -1, (0,255,0), 2)
     cv2.imwrite(features_filename, features)
 
-    return contours
+    if not cons:
+        print 'no contours found'
+    return cons
 
-def compare_contours_to_reference(contours):
+def compare_contours_to_reference(cons):
+    # try to prefilter contours.  If there is one taht's big enough to be a 
+    #   person, then there is one that looks like a reflection (same x, 
+    #   only separated on y by 5 pixels or so), delete and don't report on
+    #   the reflection as a separate entity
     # list contours
-    for c in contours:
+    for c in cons:
         (x,y,w,h) = cv2.boundingRect(c)
-        print 'one contour has x,y,w,h {0},{1},{2},{3}'.format(x,y,w,h)
-        home_scene_rect = (x+reference_scene_offset[0],
-                           y+reference_scene_offset[3],
-                           w,
-                           h)
-        if h > 2*w and h > 10:
-            print 'its a standing person'
-        if x > 40 and y > 30:
-            print 'its in the BR quadrant'
-        bottom_y = h + y
-        if bottom_y < 30:
-            print 'its in the far half of the room'
+        if w > feature_threshold_lower or h > feature_threshold_lower:
+            print 'feature above threshold: x,y,w,h =({0},{1},{2},{3})'.format(x,y,w,h)
+            home_scene_rect = (x+reference_scene_offset[0],
+                               y+reference_scene_offset[1],
+                               w,
+                               h)
+            if h > 2*w and h > 10:
+                print 'its a standing person'
+            if x > 40 and y > 30:
+                print 'its in the BR quadrant'
+            bottom_y = h + y
+            if bottom_y < 30:
+                print 'its in the far half of the room'
+        else:
+            print 'feature is below the lower threshold size'
 
 
 try:
@@ -130,6 +149,6 @@ try:
     image_has_differences = image_differences()
     if image_has_differences:
         contours = find_features()
-    compare_contours_to_reference(contours)
+        compare_contours_to_reference(contours)
 except Exception, e:
     print e
