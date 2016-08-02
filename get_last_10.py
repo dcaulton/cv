@@ -29,7 +29,6 @@ class GetLast10(object):
         tf = [x for x in st if re.findall('-snapshot\.jpg$', x)]
         tfl10 = tf[-10:]
         
-        print 'last 10 eligible pics are ' + str(tfl10)
         input_image_array = []
 
         for p in tfl10:
