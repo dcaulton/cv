@@ -23,6 +23,9 @@ edged_filename = os.path.join(working_dir, 'edged.jpg')
 features_filename = os.path.join(working_dir, 'features.jpg')
 
 def get_last_10_images():
+    # allow for an override if there is something in the last 10 images you want to ignore.
+    # keep a list of scenes with nothing in them.  find which one is closest to last_10, minus
+    #   the feature it has
     jj = os.path.join(working_dir, 'xxy')
     tc = 'rm -rf {0}; mkdir {1}; cd /home/pi/Pictures; ls -t | grep "\-00.jpg\|\-01.jpg\|\-snapshot.jpg" | head -10 | xargs cp -t {2}; convert -average {3}/*.jpg {4}'.format(jj, jj, jj, jj, last10_filename)
     os.system(tc)
@@ -116,11 +119,17 @@ def find_features():
         print 'no contours found'
     return cons
 
-def compare_contours_to_reference(cons):
-    # try to prefilter contours.  If there is one taht's big enough to be a 
+def filter_contours(contours):
+    # try to prefilter contours.  If there is one that's big enough to be a 
     #   person, then there is one that looks like a reflection (same x, 
     #   only separated on y by 5 pixels or so), delete and don't report on
     #   the reflection as a separate entity
+    #
+    # remove_reflections
+    # remove_too_small
+    # remove_illogical_locations
+
+def compare_contours_to_reference(cons):
     # list contours
     for c in cons:
         (x,y,w,h) = cv2.boundingRect(c)
@@ -149,6 +158,7 @@ try:
     image_has_differences = image_differences()
     if image_has_differences:
         contours = find_features()
+        filter_contours(contours)
         compare_contours_to_reference(contours)
 except Exception, e:
     print e
