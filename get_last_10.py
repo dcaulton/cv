@@ -3,8 +3,6 @@ import os
 import datetime
 import numpy as np
 import re
-import shutil    #
-import tempfile     #
 
 the_source_dir = '/home/pi/Pictures'
 the_output_dir = '/home/pi/Pictures'
@@ -15,7 +13,7 @@ def sorted_ls(path):
 
 
 class GetLast10(object):
-    # averages the most recent 10 snapshot images that are sitting in 'working+dir'
+    # averages the most recent 10 snapshot images that are sitting in the /home/pi/Pictures dir
 
     @staticmethod
     def get_last_10_images(source_dir, output_dir):
@@ -25,10 +23,10 @@ class GetLast10(object):
         output_name = os.path.join(
             output_dir,
             "last10_{0}.jpg".format(datetime.datetime.now().strftime('%Y-%m-%d:%H:%M:%S')))
-        d = tempfile.mkdtemp()   #
+        silly_output_name = os.path.join(output_dir,'wocka_wocka.jpg')
 
         st = sorted_ls(source_dir)
-        tf = [x for x in st if re.findall('00\.jpg$|01\.jpg$|-snapshot\.jpg$', x)]
+        tf = [x for x in st if re.findall('-snapshot\.jpg$', x)]
         tfl10 = tf[-10:]
         
         print 'last 10 eligible pics are ' + str(tfl10)
@@ -36,24 +34,14 @@ class GetLast10(object):
 
         for p in tfl10:
             f = os.path.join(source_dir, p)
-            t = os.path.join(d, p)   #
-            shutil.copyfile(f, t)     #
             pi = cv2.imread(f)
             input_image_array.append(pi)
 
         canvas = .1 * input_image_array[0]
-
         for im in input_image_array[1:]:
-            cv2.add(canvas, im*.10)
-
-        cv2.imwrite(output_name, canvas)
+            canvas = cv2.add(canvas, im*.1)
+        cv2.imwrite(output_name, canvas.astype(int))
             
-        tc = 'convert -average {0}/*.jpg {1}'.format(d, output_name) #
-        print 'executing ' + tc   #
-        os.system(tc)   #
-        shutil.rmtree(d)   #
-
-        print 'created '+output_name   #
         return output_name
 
 def main():
